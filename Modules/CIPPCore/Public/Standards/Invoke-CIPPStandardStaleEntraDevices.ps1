@@ -1,4 +1,4 @@
-﻿function Invoke-CIPPStandardStaleEntraDevices {
+function Invoke-CIPPStandardStaleEntraDevices {
     <#
     .FUNCTIONALITY
         Internal
@@ -13,7 +13,6 @@
         CAT
             Entra (AAD) Standards
         TAG
-            "highimpact"
             "CIS"
         ADDEDCOMPONENT
             {"type":"number","name":"standards.StaleEntraDevices.deviceAgeThreshold","label":"Days before stale(Dont set below 30)"}
@@ -21,6 +20,8 @@
 
         IMPACT
             High Impact
+        ADDEDDATE
+            2025-01-19
         POWERSHELLEQUIVALENT
             Remove-MgDevice, Update-MgDevice or Graph API
         RECOMMENDEDBY
@@ -37,7 +38,7 @@
     $Date = (Get-Date).AddDays( - [int]$Settings.deviceAgeThreshold)
     $StaleDevices = $AllDevices | Where-Object { $_.approximateLastSignInDateTime -lt $Date }
 
-    If ($Settings.remediate -eq $true) {
+    if ($Settings.remediate -eq $true) {
 
         Write-Host 'Remediation not implemented yet'
         # TODO: Implement remediation. For others in the future that want to try this:
@@ -56,7 +57,8 @@
     if ($Settings.alert -eq $true) {
 
         if ($StaleDevices.Count -gt 0) {
-            Write-LogMessage -API 'Standards' -tenant $Tenant -message "$($StaleDevices.Count) Stale devices found" -sev Alert
+            Write-StandardsAlert -message "$($StaleDevices.Count) Stale devices found" -object $StaleDevices -tenant $Tenant -standardName 'StaleEntraDevices' -standardId $Settings.standardId
+            Write-LogMessage -API 'Standards' -tenant $Tenant -message "$($StaleDevices.Count) Stale devices found" -sev Info
         } else {
             Write-LogMessage -API 'Standards' -tenant $Tenant -message 'No stale devices found' -sev Info
         }
@@ -71,5 +73,12 @@
         } else {
             Add-CIPPBPAField -FieldName 'StaleEntraDevices' -FieldValue $true -StoreAs bool -Tenant $Tenant
         }
+
+        if ($StaleDevices.Count -gt 0) {
+            $FieldValue = $StaleDevices | Select-Object -Property displayName, id, approximateLastSignInDateTime, accountEnabled, enrollmentProfileName, operatingSystem, managementType, profileType
+        } else {
+            $FieldValue = $true
+        }
+        Set-CIPPStandardsCompareField -FieldName 'standards.StaleEntraDevices' -FieldValue $FieldValue -Tenant $Tenant
     }
 }

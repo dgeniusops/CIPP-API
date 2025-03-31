@@ -3,7 +3,7 @@ using namespace System.Net
 Function Invoke-ExecSAMSetup {
     <#
     .FUNCTIONALITY
-        Entrypoint
+        Entrypoint,AnyTenant
     .ROLE
         CIPP.AppSettings.ReadWrite
     #>
@@ -31,7 +31,9 @@ Function Invoke-ExecSAMSetup {
     }
 
     $APIName = $Request.Params.CIPPEndpoint
-    Write-LogMessage -headers $Request.Headers -API $APINAME -message 'Accessed this API' -Sev 'Debug'
+    $Headers = $Request.Headers
+    Write-LogMessage -headers $Headers -API $APIName -message 'Accessed this API' -Sev 'Debug'
+
     if ($env:AzureWebJobsStorage -eq 'UseDevelopmentStorage=true') {
         $DevSecretsTable = Get-CIPPTable -tablename 'DevSecrets'
         $Secret = Get-CIPPAzDataTableEntity @DevSecretsTable -Filter "PartitionKey eq 'Secret' and RowKey eq 'Secret'"
@@ -49,7 +51,9 @@ Function Invoke-ExecSAMSetup {
     } else {
         if ($env:MSI_SECRET) {
             Disable-AzContextAutosave -Scope Process | Out-Null
-            $AzSession = Connect-AzAccount -Identity
+            $null = Connect-AzAccount -Identity
+            $SubscriptionId = $ENV:WEBSITE_OWNER_NAME -split '\+' | Select-Object -First 1
+            $null = Set-AzContext -SubscriptionId $SubscriptionId
         }
     }
     if (!$ENV:SetFromProfile) {

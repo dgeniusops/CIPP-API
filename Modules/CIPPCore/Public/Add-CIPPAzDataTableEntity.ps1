@@ -1,11 +1,27 @@
 function Add-CIPPAzDataTableEntity {
-    [CmdletBinding()]
+    [CmdletBinding(DefaultParameterSetName = 'OperationType')]
     param(
         $Context,
         $Entity,
+        [switch]$CreateTableIfNotExists,
+
+        [Parameter(ParameterSetName = 'Force')]
         [switch]$Force,
-        [switch]$CreateTableIfNotExists
+
+        [Parameter(ParameterSetName = 'OperationType')]
+        [ValidateSet('Add', 'UpsertMerge', 'UpsertReplace')]
+        [string]$OperationType = 'Add'
     )
+
+    $Parameters = @{
+        Context                = $Context
+        CreateTableIfNotExists = $CreateTableIfNotExists
+    }
+    if ($PSCmdlet.ParameterSetName -eq 'Force') {
+        $Parameters.Force = $Force
+    } else {
+        $Parameters.OperationType = $OperationType
+    }
 
     $MaxRowSize = 500000 - 100 # Maximum size of an entity
     $MaxSize = 30kb # Maximum size of a property value
@@ -15,12 +31,12 @@ function Add-CIPPAzDataTableEntity {
             if ($null -eq $SingleEnt.PartitionKey -or $null -eq $SingleEnt.RowKey) {
                 throw 'PartitionKey or RowKey is null'
             }
-            Add-AzDataTableEntity -Context $Context -Force:$Force -CreateTableIfNotExists:$CreateTableIfNotExists -Entity $SingleEnt -ErrorAction Stop
+            Add-AzDataTableEntity @Parameters -Entity $SingleEnt -ErrorAction Stop
         } catch [System.Exception] {
             if ($_.Exception.ErrorCode -eq 'PropertyValueTooLarge' -or $_.Exception.ErrorCode -eq 'EntityTooLarge' -or $_.Exception.ErrorCode -eq 'RequestBodyTooLarge') {
                 try {
                     Write-Host 'Entity is too large. Splitting entity into multiple parts.'
-                    Write-Information ($SingleEnt | ConvertTo-Json)
+                    #Write-Information ($SingleEnt | ConvertTo-Json)
                     $largePropertyNames = [System.Collections.Generic.List[string]]::new()
                     $entitySize = 0
 
@@ -137,14 +153,18 @@ function Add-CIPPAzDataTableEntity {
 
                         foreach ($row in $rows) {
                             Write-Information "current entity is $($row.RowKey) with $($row.PartitionKey). Our size is $([System.Text.Encoding]::UTF8.GetByteCount($($row | ConvertTo-Json -Compress)))"
-                            Add-AzDataTableEntity -Context $Context -Force:$Force -CreateTableIfNotExists:$CreateTableIfNotExists -Entity $row
+                            $NewRow = ([PSCustomObject]$row) | Select-Object * -ExcludeProperty Timestamp
+                            Add-AzDataTableEntity @Parameters -Entity $NewRow
                         }
                     } else {
-                        Add-AzDataTableEntity -Context $Context -Force:$Force -CreateTableIfNotExists:$CreateTableIfNotExists -Entity $SingleEnt
+                        $NewEnt = ([PSCustomObject]$SingleEnt) | Select-Object * -ExcludeProperty Timestamp
+                        Add-AzDataTableEntity @Parameters -Entity $NewEnt
                     }
 
                 } catch {
                     $ErrorMessage = Get-NormalizedError -Message $_.Exception.Message
+                    Write-Warning ('AzBobbyTables Error')
+                    Write-Information ($SingleEnt | ConvertTo-Json)
                     throw "Error processing entity: $ErrorMessage Linenumber: $($_.InvocationInfo.ScriptLineNumber)"
                 }
             } else {

@@ -3,12 +3,16 @@ using namespace System.Net
 Function Invoke-GetCippAlerts {
     <#
     .FUNCTIONALITY
-        Entrypoint
+        Entrypoint,AnyTenant
     .ROLE
         CIPP.Core.Read
     #>
     [CmdletBinding()]
     param($Request, $TriggerMetadata)
+
+    $APIName = $Request.Params.CIPPEndpoint
+    $Headers = $Request.Headers
+    Write-LogMessage -headers $Headers -API $APIName -message 'Accessed this API' -Sev 'Debug'
 
     $Alerts = [System.Collections.Generic.List[object]]::new()
     $Table = Get-CippTable -tablename CippAlerts
