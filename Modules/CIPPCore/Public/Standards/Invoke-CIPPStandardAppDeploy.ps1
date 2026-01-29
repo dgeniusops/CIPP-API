@@ -36,8 +36,10 @@ function Invoke-CIPPStandardAppDeploy {
     Write-Information "Running AppDeploy standard for tenant $($Tenant)."
 
     $AppsToAdd = $Settings.appids -split ','
-    $AppExists = New-GraphGetRequest -uri 'https://graph.microsoft.com/beta/servicePrincipals?$top=999' -tenantid $Tenant
+    $AppExists = New-CIPPDbRequest -TenantFilter $Tenant -Type 'ServicePrincipals'
     $Mode = $Settings.mode ?? 'copy'
+
+    $ExpectedValue = [PSCustomObject]@{ state = 'Configured correctly' }
 
     if ($Mode -eq 'template') {
         # For template mode, we need to check each template individually
@@ -105,6 +107,9 @@ function Invoke-CIPPStandardAppDeploy {
             }
         }
     }
+
+    $CurrentValue = if ($MissingApps.Count -eq 0) { [PSCustomObject]@{'state' = 'Configured correctly' } } else { [PSCustomObject]@{'MissingApps' = $MissingApps } }
+
     if ($Settings.remediate -eq $true) {
         if ($Mode -eq 'copy') {
             foreach ($App in $AppsToAdd) {
@@ -266,6 +271,13 @@ function Invoke-CIPPStandardAppDeploy {
                 }
             }
         }
+
+        # Refresh service principals cache after remediation
+        try {
+            Set-CIPPDBCacheServicePrincipals -TenantFilter $Tenant
+        } catch {
+            Write-LogMessage -API 'Standards' -tenant $Tenant -message "Failed to refresh service principals cache after remediation: $($_.Exception.Message)" -sev Warning
+        }
     }
 
     if ($Settings.alert) {
@@ -279,7 +291,7 @@ function Invoke-CIPPStandardAppDeploy {
 
     if ($Settings.report -eq $true) {
         $StateIsCorrect = $MissingApps.Count -eq 0 ? $true : @{ 'Missing Apps' = $MissingApps -join ',' }
-        Set-CIPPStandardsCompareField -FieldName 'standards.AppDeploy' -FieldValue $StateIsCorrect -TenantFilter $tenant
+        Set-CIPPStandardsCompareField -FieldName 'standards.AppDeploy' -CurrentValue $CurrentValue -ExpectedValue $ExpectedValue -TenantFilter $tenant
         Add-CIPPBPAField -FieldName 'AppDeploy' -FieldValue $StateIsCorrect -StoreAs bool -Tenant $tenant
     }
 
